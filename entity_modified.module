@@ -86,7 +86,7 @@ function entity_modified_last($entity_type, $entity) {
 
   // If native modified timestamp known.
   if ($name) {
-    return $name;
+    return $entity->$name;
   }
 
   // Retrieve entity's last modified from our custom table.
