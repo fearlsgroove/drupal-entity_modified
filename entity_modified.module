@@ -14,9 +14,11 @@ function entity_modified_entity_delete($entity, $type) {
   // Attempt to delete any record we stored for the entity. We do not check
   // if it has a modified property because our knowledge of the property could
   // have occurred after we already had a record (module updates).
+  list($entity_id) = entity_extract_ids($type, $entity);
+
   db_delete('entity_modified')
       ->condition('entity_type', $type)
-      ->condition('entity_id', $entity->{entity_modified_id_name($type)})
+      ->condition('entity_id', $entity_id)
       ->execute();
 }
 
@@ -26,11 +28,12 @@ function entity_modified_entity_delete($entity, $type) {
 function entity_modified_entity_insert($entity, $type) {
   // If the module does not have a modified property that we know about then
   // insert.
-  if (!entity_modified_modified_name($type)) {
+  if (!entity_modified_property_name($type)) {
+    list($entity_id) = entity_extract_ids($type, $entity);
     db_insert('entity_modified')
         ->fields(array(
           'entity_type' => $type,
-          'entity_id' => $entity->{entity_modified_id_name($type)},
+          'entity_id' => $entity_id,
           'modified' => REQUEST_TIME,
         ))
         ->execute();
@@ -43,11 +46,12 @@ function entity_modified_entity_insert($entity, $type) {
 function entity_modified_entity_update($entity, $type) {
   // If the module does not have a modified property that we know about then
   // insert or update.
-  if (!entity_modified_modified_name($type)) {
+  if (!entity_modified_property_name($type)) {
+    list($entity_id) = entity_extract_ids($type, $entity);
     db_merge('entity_modified')
         ->key(array(
           'entity_type' => $type,
-          'entity_id' => $entity->{entity_modified_id_name($type)},
+          'entity_id' => $entity_id,
         ))
         ->fields(array(
           'modified' => REQUEST_TIME,
@@ -57,32 +61,10 @@ function entity_modified_entity_update($entity, $type) {
 }
 
 /**
- * Retrieve the primary ID name of a supplied entity type.
- *
- * @param string $entity_type
- *   The entity type machine name to retrieve the ID of.
- *
- * @return string
- *   The primary ID property name.
- */
-function entity_modified_id_name($entity_type) {
-  // Do not use drupal_static() as this is called very often, and there is no
-  // foreseeable reason to need to clear it during a page load.
-  static $names = array();
-
-  if (!isset($names[$entity_type])) {
-    $info = entity_get_info($entity_type);
-    $names[$entity_type] = $info['entity keys']['id'];
-  }
-
-  return $names[$entity_type];
-}
-
-/**
  * Retrieve the last time an entity was modified.
  */
 function entity_modified_last($entity_type, $entity) {
-  $name = entity_modified_modified_name($entity_type);
+  $name = entity_modified_property_name($entity_type);
 
   // If native modified timestamp known.
   if ($name) {
@@ -90,19 +72,20 @@ function entity_modified_last($entity_type, $entity) {
   }
 
   // Retrieve entity's last modified from our custom table.
-  $id = entity_modified_id_name($entity_type);
-  $modified = db_query(
+  list($entity_id) = entity_extract_ids($entity_type, $entity);
+
+  $modified_timestamp = db_query(
     'SELECT modified FROM {entity_modified} WHERE entity_type = :entity_type AND entity_id = :entity_id',
-    array(':entity_type' => $entity_type, ':entity_id' => $entity->$id)
+    array(':entity_type' => $entity_type, ':entity_id' => $entity_id)
   )->fetchField();
 
-  // If not found then insert a new record at the present time.
-  if (!$modified) {
-    entity_modified_entity_insert($entity, $entity_type);
-    $modified = REQUEST_TIME;
+  // If not found then use '1' as inserting something in a read-only operation
+  // is a bad idea.
+  if (!$modified_timestamp) {
+    $modified_timestamp = 1;
   }
 
-  return $modified;
+  return $modified_timestamp;
 }
 
 /**
@@ -111,35 +94,50 @@ function entity_modified_last($entity_type, $entity) {
  * @param string $entity_type
  *   The entity type to retrieve the property name for.
  *
- * @return void|string
- *   Returns string if a property exists.
+ * @return array|string|FALSE
+ *   - Returns the whole list of property names if no entity type is given.
+ *   - Returns a string if a modified property exists on the given entity_type.
+ *   - Else returns FALSE
  */
-function entity_modified_modified_name($entity_type) {
-  // Do not use drupal_static() as this is called very often, and there is no
-  // foreseeable reason to need to clear it during a page load.
-  static $modified = array();
+function entity_modified_property_name($entity_type = NULL) {
+  // Use the advanced drupal_static() pattern, since this is called very often.
+  static $drupal_static_fast;
+  if (!isset($drupal_static_fast)) {
+    $drupal_static_fast['modified_property_names'] = &drupal_static(__FUNCTION__);
+  }
+  $modified_property_names = &$drupal_static_fast['modified_property_names'];
 
-  if (empty($modified)) {
-    drupal_alter('entity_modified_modified_name', $modified);
+  if (!isset($modified_property_names)) {
+    $modified_property_names = module_invoke_all('entity_modified_property_names');
+    drupal_alter('entity_modified_property_names', $modified_property_names);
   }
 
-  if (isset($modified[$entity_type])) {
-    return $modified[$entity_type];
+  if (!isset($entity_type)) {
+    return $modified_property_names;
   }
+  if (isset($modified_property_names[$entity_type])) {
+    return $modified_property_names[$entity_type];
+  }
+  return FALSE;
 }
 
 /**
- * Implements hook_entity_modified_modified_name_alter().
+ * Implements hook_entity_modified_property_names().
  *
  * Eating own dog food, define unique identifiers for entity types this module
  * is aware of.
+ *
+ * @return $modified_property_names.
+ *   Array of modified property names keyed by entity_type.
  */
-function entity_modified_entity_modified_modified_name_alter(&$modified) {
+function entity_modified_entity_modified_property_names() {
+  $modified_property_names = array();
   // Core entity types.
-  $modified['comment'] = 'changed';
-  $modified['node'] = 'changed';
+  $modified_property_names['comment'] = 'changed';
+  $modified_property_names['node'] = 'changed';
 
   // File entity module.
-  $modified['file'] = 'timestamp';
-}
+  $modified_property_names['file'] = 'timestamp';
 
+  return $modified_property_names;
+}
