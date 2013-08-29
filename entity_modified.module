@@ -94,43 +94,39 @@ function entity_modified_last($entity_type, $entity) {
  * @param string $entity_type
  *   The entity type to retrieve the property name for.
  *
- * @return array|string|FALSE
- *   - Returns the whole list of property names if no entity type is given.
- *   - Returns a string if a modified property exists on the given entity_type.
- *   - Else returns FALSE
+ * @return string|FALSE
+ *   - Returns the modified property name for the given entity_type if it exists.
+ *   - Else it returns FALSE.
  */
 function entity_modified_property_name($entity_type = NULL) {
-  // Use the advanced drupal_static() pattern, since this is called very often.
-  static $drupal_static_fast;
-  if (!isset($drupal_static_fast)) {
-    $drupal_static_fast['modified_property_names'] = &drupal_static(__FUNCTION__);
-  }
-  $modified_property_names = &$drupal_static_fast['modified_property_names'];
+  $info = entity_get_info($entity_type);
 
-  if (!isset($modified_property_names)) {
-    $modified_property_names = module_invoke_all('entity_modified_property_names');
-    drupal_alter('entity_modified_property_names', $modified_property_names);
-  }
-
-  if (!isset($entity_type)) {
-    return $modified_property_names;
-  }
-  if (isset($modified_property_names[$entity_type])) {
-    return $modified_property_names[$entity_type];
+  if (isset($info['modified property name'])) {
+    return $info['modified property name'];
   }
   return FALSE;
 }
 
 /**
- * Implements hook_entity_modified_property_names().
- *
+ * Implements hook_entity_info_alter().
+ */
+function entity_modified_entity_info_alter(&$entity_info) {
+ foreach (entity_modified_supported_core_entities(TRUE) as $type => $property) {
+   $entity_info[$type]['modified property name'] = $property;
+ }
+}
+
+/**
  * Eating own dog food, define unique identifiers for entity types this module
  * is aware of.
+ *
+ * @param $enabled
+ *   If set, only return enabled modules.
  *
  * @return $modified_property_names.
  *   Array of modified property names keyed by entity_type.
  */
-function entity_modified_entity_modified_property_names() {
+function entity_modified_supported_core_entities($enabled = FALSE) {
   $modified_property_names = array();
   // Core entity types.
   $modified_property_names['comment'] = 'changed';
@@ -138,6 +134,12 @@ function entity_modified_entity_modified_property_names() {
 
   // File entity module.
   $modified_property_names['file'] = 'timestamp';
+
+  if ($enabled) {
+    if (!module_exists('comment')) {
+      unset($modified_property_names['comment']);
+    }
+  }
 
   return $modified_property_names;
 }
