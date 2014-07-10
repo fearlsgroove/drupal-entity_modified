@@ -26,18 +26,7 @@ function entity_modified_entity_delete($entity, $type) {
  * Implements hook_entity_insert().
  */
 function entity_modified_entity_insert($entity, $type) {
-  // If the module does not have a modified property that we know about then
-  // insert.
-  if (!entity_modified_property_name($type)) {
-    list($entity_id) = entity_extract_ids($type, $entity);
-    db_insert('entity_modified')
-        ->fields(array(
-          'entity_type' => $type,
-          'entity_id' => $entity_id,
-          'modified' => REQUEST_TIME,
-        ))
-        ->execute();
-  }
+  entity_modified_entity_update($entity, $type);
 }
 
 /**
@@ -49,14 +38,16 @@ function entity_modified_entity_update($entity, $type) {
   if (!entity_modified_property_name($type)) {
     list($entity_id) = entity_extract_ids($type, $entity);
     db_merge('entity_modified')
-        ->key(array(
-          'entity_type' => $type,
-          'entity_id' => $entity_id,
-        ))
-        ->fields(array(
-          'modified' => REQUEST_TIME,
-        ))
-        ->execute();
+      ->key(array(
+        'entity_type' => $type,
+        'entity_id' => $entity_id,
+      ))
+      ->fields(array(
+        'entity_type' => $type,
+        'entity_id' => $entity_id,
+        'modified' => REQUEST_TIME,
+      ))
+      ->execute();
   }
 }
 
