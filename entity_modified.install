@@ -14,7 +14,7 @@ function entity_modified_schema() {
     'fields' => array(
       'entity_type' => array(
         'type' => 'varchar',
-        'length' => 32,
+        'length' => 255,
         'not null' => TRUE,
         'default' => '',
         'description' => 'The entity type this modified tracker refers to.',
@@ -39,3 +39,16 @@ function entity_modified_schema() {
   return $schema;
 }
 
+/**
+ * Increase length of entity_type field
+ */
+function entity_modified_update_7001(&$sandbox) {
+  db_drop_primary_key('entity_modified');
+  db_change_field('entity_modified', 'entity_type', 'entity_type', array(
+    'type' => 'varchar',
+    'length' => 255,
+    'not null' => TRUE,
+    'default' => '',
+    'description' => 'The entity type this modified tracker refers to.',
+  ), array('primary key' => array('entity_type', 'entity_id')));
+}
